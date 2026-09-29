@@ -1,0 +1,28 @@
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+} from '@tanstack/react-router'
+import { HomePage } from './pages/HomePage'
+
+const rootRoute = createRootRoute({
+  component: () => <Outlet />,
+})
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  component: HomePage,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute])
+
+export const router = createRouter({ routeTree })
+
+// Register the router instance for type-safety across the app.
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}

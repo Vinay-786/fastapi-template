@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual envs (deps are installed fresh in the image)
+.venv/
+venv/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Dev tooling / VCS
+.git/
+.gitignore
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Tests are not needed in the runtime image
+tests/

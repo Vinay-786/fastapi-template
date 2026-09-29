@@ -1,0 +1,57 @@
+# Root compose: full stack (Postgres + FastAPI backend + nginx-served frontend).
+#
+#   docker compose up --build
+#
+# Frontend is exposed on http://localhost:8080 and reverse-proxies /api/* to
+# the backend, which talks to the db service over the internal network.
+
+services:
+  db:
+    image: postgres:18
+    container_name: app_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-backend}
+    ports:
+      # Published to the host so local backend dev/tests can reach it at
+      # localhost:5432. In-cluster services still use the `db` hostname.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18+ stores data in a version-specific subdirectory, so the
+      # recommended mount point is /var/lib/postgresql (not .../data).
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-backend}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: app_backend
+    restart: unless-stopped
+    environment:
+      # Connect to the db service by its compose hostname.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-backend}
+      # Debug off by default for the containerized (production-like) stack.
+      # Override with `DEBUG=true docker compose up` for a debug container.
+      DEBUG: ${DEBUG:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: app_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

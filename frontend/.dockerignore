@@ -1,0 +1,28 @@
+# Dependencies (installed fresh in the image)
+node_modules/
+
+# Build output (produced inside the image)
+dist/
+dist-ssr/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+logs/
+*.log
+
+# Dev tooling / VCS
+.git/
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
