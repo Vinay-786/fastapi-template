@@ -16,6 +16,30 @@ A full-stack template:
 
 ## Conventions
 
+### Skills
+
+Project skills live in `.agents/skills/<name>/SKILL.md` — the standard
+[Agent Skills](https://agentskills.io/specification) location, auto-discovered
+by pi and opencode. If your agent doesn't discover them there, mirror/move the
+`.agents/skills/` directory to the location it expects (e.g. `.claude/skills/`
+for Claude, `.opencode/skills/` for opencode); the `SKILL.md` files themselves
+are spec-compliant and portable as-is.
+
+- **Coding standards:** see `.agents/skills/coding-standards/SKILL.md` for
+  baseline naming, immutability, error-handling, and code-smell conventions
+  (tailored to this React + Vite / FastAPI + asyncpg stack).
+- **FastAPI patterns:** see `.agents/skills/fastapi-patterns/SKILL.md` for
+  backend structure, Pydantic v2 schemas, connection-pool DI, transactional
+  service methods, and testing — all raw-asyncpg (no SQLAlchemy/Alembic).
+- **Python patterns:** see `.agents/skills/python-patterns/SKILL.md` for
+  idiomatic Python 3.13 (type hints, EAFP, context managers, async), `uv`
+  tooling, and anti-patterns to avoid.
+- **React patterns:** see `.agents/skills/react-patterns/SKILL.md` for React 19
+  in a Vite SPA — hooks discipline, TanStack Query data fetching, forms, state
+  location, and composition (no Next.js/RSC).
+
+### General
+
 - **Package managers:** backend uses `uv`; frontend uses `npm` (Node 22, pinned
   in `frontend/.nvmrc`). Do not introduce `pnpm`/`yarn`.
 - **Common tasks** are exposed via the root `Makefile` — run `make help` to
@@ -96,6 +120,16 @@ are omitted).
 
 ```
 .
+├── .agents
+│   └── skills
+│       ├── coding-standards
+│       │   └── SKILL.md
+│       ├── fastapi-patterns
+│       │   └── SKILL.md
+│       ├── python-patterns
+│       │   └── SKILL.md
+│       └── react-patterns
+│           └── SKILL.md
 ├── backend
 │   ├── migrations
 │   │   └── 0001_create_users.sql
@@ -154,7 +188,7 @@ are omitted).
 ├── Makefile
 └── README.md
 
-12 directories, 46 files
+18 directories, 50 files
 ```
 
 ## Key files
