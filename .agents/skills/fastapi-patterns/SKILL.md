@@ -1,6 +1,6 @@
 ---
 name: fastapi-patterns
-description: FastAPI best practices for THIS project — raw asyncpg (no ORM), Pydantic v2 schemas, connection-pool dependency injection, async handlers, transactional service methods, and testing with pytest + httpx. No SQLAlchemy or Alembic. Use when building or reviewing FastAPI code here.
+description: FastAPI best practices for THIS project — raw asyncpg (no ORM), Alembic migrations with hand-written raw SQL, Pydantic v2 schemas, connection-pool dependency injection, async handlers, transactional service methods, and testing with pytest + httpx. No SQLAlchemy ORM models. Use when building or reviewing FastAPI code here.
 metadata:
   origin: ECC (adapted for this project — raw asyncpg, no SQLAlchemy)
 ---
@@ -9,10 +9,11 @@ metadata:
 
 FastAPI development conventions for this repository.
 
-**Stack note:** this project uses **FastAPI + raw `asyncpg`** with a
-hand-rolled forward-only SQL migration runner. There is **no ORM
-(no SQLAlchemy) and no migration framework (no Alembic)**. Do not introduce
-them — schema changes are plain `*.sql` files in `backend/migrations/`. See
+**Stack note:** this project uses **FastAPI + raw `asyncpg`** with **Alembic**
+as the migration engine. There is **no ORM (no SQLAlchemy models)** —
+revisions are hand-written raw SQL via `op.execute(sa.text(...))` in
+`backend/alembic/versions/`, and `--autogenerate` is never used. Do not
+introduce ORM models — schema changes are new Alembic revisions. See
 `backend/README.md` and `Agent.md`.
 
 ## Project Structure
@@ -22,12 +23,13 @@ models live in `models.py`):
 
 ```text
 backend/
-|-- migrations/            # ordered forward-only *.sql files
+|-- alembic/                 # Alembic revisions (hand-written raw SQL, no ORM)
+|   `-- versions/
+|-- alembic.ini
 `-- src/backend/
     |-- app.py             # FastAPI app, lifespan, routes
-    |-- config.py          # env-based settings (os.environ)
-    |-- database.py        # asyncpg pool + connection context manager
-    |-- migrations.py      # migration runner (advisory lock + ledger)
+    |-- config.py          # env-based settings (os.environ) + to_sync_url()
+    |-- database.py        # asyncpg pool + startup `alembic upgrade head`
     |-- models.py          # Pydantic request/response models
     `-- __init__.py        # dev-server entrypoint (main)
 ```
@@ -39,9 +41,9 @@ handlers thin and push data access into service functions/classes.
 
 ## App and Lifespan
 
-The lifespan opens the asyncpg pool (which runs pending migrations) on startup
-and closes it on shutdown. Do **not** create tables here via an ORM — the
-migration runner owns the schema.
+The lifespan opens the asyncpg pool (which runs `alembic upgrade head` on
+startup) and closes it on shutdown. Do **not** create tables here via an ORM —
+Alembic revisions own the schema.
 
 ```python
 # src/backend/app.py
@@ -416,7 +418,7 @@ for password columns.
 
 ## Testing with pytest + httpx
 
-The existing suite tests the migration runner directly against a live Postgres
+The existing suite tests the Alembic setup directly against a live Postgres
 (see `backend/tests/`). For endpoint tests, drive the ASGI app with httpx and
 override the connection dependency. There is **no SQLite/aiosqlite** — tests run
 against real Postgres (start it with `make db-up`), which matches production
@@ -528,8 +530,9 @@ row = await conn.fetchrow(
   structural errors (`asyncpg.UniqueViolationError`) in the service layer.
 - Enforce deterministic ordering (e.g. `ORDER BY created_at DESC, id`) on all
   `LIMIT/OFFSET` paginated endpoints to avoid skipped/duplicated rows.
-- Keep the schema in `migrations/` (forward-only SQL); never create tables from
-  the app at runtime and never edit an already-applied migration.
+- Keep the schema in `backend/alembic/versions/` (hand-written raw-SQL
+  revisions, no `--autogenerate`); never create tables from the app at runtime
+  and never edit an already-applied revision.
 - Separate authentication (`401`) from authorization (`403`) if you add auth.
 - Add dependencies with `uv add` (or `uv add --dev`), and document new env vars
   in `.env.example`.

@@ -1,99 +1,117 @@
 # Backend
 
-FastAPI service backed by PostgreSQL 18, using raw `asyncpg` (no ORM) with a
-hand-rolled, forward-only SQL migration runner.
+FastAPI service backed by PostgreSQL 18, using raw `asyncpg` (no ORM) with
+Alembic as the migration engine (hand-written raw-SQL revisions, no model
+metadata, no `--autogenerate`).
 
 ## Database migrations
 
-Schema changes are managed by a small custom migration runner. There is **no
-ORM and no migration framework** (no SQLAlchemy/Alembic) — just plain `*.sql`
-files and raw `asyncpg`.
+Schema changes are managed by Alembic. There is **no ORM** — revisions
+contain hand-written SQL executed via `op.execute(sa.text(...))`, and the
+application itself keeps using raw `asyncpg`. Alembic runs on a short-lived
+synchronous SQLAlchemy engine (psycopg v3) only for migrations.
 
 ### Layout
 
 ```
 backend/
-├── migrations/                 # ordered SQL migration files
-│   └── 0001_create_users.sql
+├── alembic.ini                   # Alembic config (URL is overridden from DATABASE_URL)
+├── alembic/
+│   ├── env.py                    # resolves DATABASE_URL -> sync psycopg URL; no metadata
+│   ├── script.py.mako            # revision template
+│   └── versions/
+│       └── 0001_create_users.py  # creates the users table
 └── src/backend/
-    ├── migrations.py           # the migration runner
-    └── database.py             # pool + lifespan; runs migrations on startup
+    ├── config.py                 # Settings + to_sync_url() helper
+    └── database.py               # pool + lifespan; runs `upgrade head` on startup
 ```
 
 ### How it works
 
+A single `DATABASE_URL` env var (plain `postgresql://`, for asyncpg) is
+shared. `to_sync_url()` in `config.py` converts it to
+`postgresql+psycopg://` for the migration engine, so no second env var is
+needed.
+
 Migrations run automatically on application startup. When the connection pool
-is created in `Database.connect()`, a single connection is used to run the
-migration process:
+is created in `Database.connect()`, `_migrate()` runs `alembic upgrade head`
+in a worker thread (`asyncio.to_thread`, since Alembic is synchronous):
 
-1. **Acquire an advisory lock.** A session-level Postgres advisory lock
-   (`pg_advisory_lock`) with a fixed application key is taken so that if
-   multiple application instances start at once, only one runs migrations; the
-   others wait, then find nothing to do.
-2. **Ensure the ledger exists.** A `schema_migrations` table is created if
-   absent:
+1. Resolve `alembic.ini` next to the backend root and point
+   `script_location` at `alembic/` with an absolute path (so startup works
+   regardless of the process working directory).
+2. Override `sqlalchemy.url` with the sync URL derived from `DATABASE_URL`.
+3. Run `upgrade head`. Alembic tracks state in its standard
+   `alembic_version` table.
 
-   | column       | type          | notes                    |
-   | ------------ | ------------- | ------------------------ |
-   | `version`    | `TEXT`        | PRIMARY KEY              |
-   | `applied_at` | `TIMESTAMPTZ` | `DEFAULT now()`          |
-
-3. **Discover migrations.** All `migrations/*.sql` files are found and sorted
-   by filename. Each file's `version` is its filename stem
-   (e.g. `0001_create_users`).
-4. **Determine pending work.** Versions already present in `schema_migrations`
-   are skipped.
-5. **Apply pending migrations in order.** Each pending migration runs inside
-   its own transaction:
-   - the SQL in the file is executed, then
-   - a row is inserted into `schema_migrations`.
-
-   Because both happen in the **same transaction**, a failure rolls back the
-   entire migration and the version is **not** recorded.
-6. **Release the advisory lock**, even if a migration failed.
+The same revisions can be applied from the CLI (see `make migrate`); both
+paths converge on `upgrade head`.
 
 ### Guarantees
 
-The runner is idempotent:
+- **Fresh database** → all revisions apply in order.
+- **Already up to date** → upgrade is a no-op.
+- **Concurrent instances** → only standard Alembic behavior applies; for the
+  containerized startup path, upgrades are quick DDL batches. (The previous
+  hand-rolled runner used a Postgres advisory lock; Alembic relies on its
+  version table + transactional DDL instead.)
+- **Failed migration** → the revision's transaction rolls back and the
+  version is not recorded, so it is retried on the next startup/upgrade once
+  fixed.
 
-- **Fresh database** → all migrations are applied in order.
-- **Already up to date** → nothing is applied (no-op).
-- **New migration added** → only the new file is applied.
-- **Concurrent instances** → the advisory lock ensures only one runs
-  migrations; the rest see no pending work.
-- **Failed migration** → rolled back atomically and not recorded, so it is
-  retried on the next startup once fixed.
+### Rules
 
-### Rules (forward-only)
-
-Migrations are **forward-only**. There are no down/rollback migrations.
-
-- **Never edit or delete an already-applied migration file.** Once a version is
-  recorded in `schema_migrations` it will not run again, so edits to that file
-  have no effect on existing databases and will cause drift.
-- **To change the schema, add a new file** with the next version number.
+- **Never edit an already-applied revision.** Once a version is recorded in
+  `alembic_version` it will not run again — add a new revision instead.
+- **No `--autogenerate`.** There are no ORM models for Alembic to compare
+  against (`target_metadata is None`). Write the DDL yourself with
+  `op.execute(sa.text(...))` and keep `downgrade()` in sync.
+- Keep `downgrade()` honest for local dev; production roll-forward only.
 
 ### Adding a new migration
 
-1. Create a new file in `backend/migrations/` using the next zero-padded
-   number and a short description:
+1. Scaffold a revision from the repository root:
 
-   ```
-   migrations/0002_add_email_index.sql
-   migrations/0003_add_user_status.sql
-   ```
-
-2. Write the change as raw SQL. Prefer idempotent DDL where practical
-   (e.g. `CREATE INDEX IF NOT EXISTS ...`), though each migration only runs
-   once regardless.
-
-   ```sql
-   -- 0002_add_email_index.sql
-   CREATE INDEX IF NOT EXISTS users_email_idx ON users (email);
+   ```bash
+   make new-migration name=add_user_status
+   # creates backend/alembic/versions/<rev>_add_user_status.py
    ```
 
-3. Restart the application. The new migration is detected and applied
-   automatically; existing migrations are skipped.
+   (This runs `alembic revision -m <name>` — never with `--autogenerate`.)
+
+2. Fill in `upgrade()` (and `downgrade()`) with raw SQL:
+
+   ```python
+   def upgrade() -> None:
+       op.execute(sa.text("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"))
+
+   def downgrade() -> None:
+       op.execute(sa.text("ALTER TABLE users DROP COLUMN status"))
+   ```
+
+3. Apply it:
+
+   ```bash
+   make migrate          # alembic upgrade head (needs make db-up first)
+   make migrate-status   # alembic current + history
+   ```
+
+   Restarting the application also applies pending revisions automatically
+   on startup.
+
+### Migrating from the old hand-rolled runner
+
+Before this change the template used plain `*.sql` files in
+`backend/migrations/` with a `schema_migrations` ledger. That runner and
+directory are gone. The initial Alembic revision (`0001`) recreates the same
+`users` schema from scratch, so **fresh databases just work**.
+
+Existing databases that already have a `schema_migrations` table need a
+one-time cutover: back up, `DROP TABLE schema_migrations` (or archive it),
+then either let the app startup upgrade apply `0001` onto an empty schema,
+or — if the `users` table already exists — run
+`alembic stamp 0001` against that database to mark it current without
+re-running DDL. Then verify with `make migrate-status`.
 
 ## Running locally
 
@@ -128,9 +146,10 @@ When `DEBUG=false` the interactive docs endpoints (`/docs`, `/redoc`,
 
 ## Tests
 
-The migration runner has tests covering fresh apply, no-op re-runs, incremental
-application, transactional rollback of a failed migration, and version-ordered
-execution. They require a running Postgres (from the repo root: `docker compose
+The migration suite covers Alembic behavior against a live database: fresh
+`upgrade head`, idempotent re-upgrade, downgrade/re-upgrade round-trip, the
+`to_sync_url()` DSN conversion, and the app-startup path (`Database._migrate`).
+They require a running Postgres (from the repo root: `docker compose
 up -d db`).
 
 ```bash

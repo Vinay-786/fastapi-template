@@ -72,20 +72,23 @@ make help
 
 ### Migrations
 
-The backend applies forward-only SQL migrations on startup. These targets help
-inspect and manage them:
+The backend uses Alembic (no ORM — revisions are hand-written raw SQL via
+`op.execute`). Migrations also apply automatically on app startup. These
+targets help inspect and manage them (all need `make db-up` first, except
+`new-migration`):
 
 | Command                          | Description                                          |
 | -------------------------------- | ---------------------------------------------------- |
-| `make migrate-status`            | Show applied vs. on-disk vs. pending migrations      |
-| `make migrate`                   | (Re)start the backend so pending migrations apply    |
-| `make new-migration name=<desc>` | Scaffold the next numbered migration file            |
+| `make migrate-status`            | Show current revision and history                    |
+| `make migrate`                   | Apply pending migrations (`alembic upgrade head`)    |
+| `make new-migration name=<desc>` | Scaffold a new revision (no `--autogenerate`)        |
+| `make migrate-downgrade`         | Revert the last revision (dev only)                  |
 
 Example:
 
 ```bash
 make new-migration name=add_user_status
-# creates backend/migrations/0002_add_user_status.sql
+# creates backend/alembic/versions/<rev>_add_user_status.py
 make migrate-status
 ```
 

@@ -30,11 +30,12 @@ RUN groupadd --system app && useradd --system --gid app --home /app app
 # Bring in the pre-built virtual environment (dependencies only).
 COPY --from=builder /app/.venv /app/.venv
 
-# Application source and migrations. The migration runner resolves its SQL
-# directory as parents[2] of src/backend/migrations.py -> /app/migrations, so
-# this layout must be preserved.
+# Application source and Alembic migrations. database.py resolves the ini as
+# parents[2] of src/backend/database.py -> /app/alembic.ini, so this layout
+# must be preserved.
 COPY src ./src
-COPY migrations ./migrations
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 USER app
 

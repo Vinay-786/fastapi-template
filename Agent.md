@@ -6,8 +6,9 @@ Guidance and structural reference for AI agents working in this repository.
 
 A full-stack template:
 
-- **Backend** — FastAPI + raw `asyncpg` (no ORM), with a hand-rolled
-  forward-only SQL migration runner. Managed with `uv`.
+- **Backend** — FastAPI + raw `asyncpg` (no ORM), with Alembic as the
+  migration engine (hand-written raw-SQL revisions, no model metadata).
+  Managed with `uv`.
 - **Frontend** — React 19 + Vite, TanStack Router + TanStack Query, served by
   nginx in production.
 - **Database** — PostgreSQL 18.
@@ -44,9 +45,10 @@ are spec-compliant and portable as-is.
   in `frontend/.nvmrc`). Do not introduce `pnpm`/`yarn`.
 - **Common tasks** are exposed via the root `Makefile` — run `make help` to
   list them (stack lifecycle, migrations, tests, db inspection, discovery).
-- **No ORM, no migration framework.** Schema changes are plain `*.sql` files in
-  `backend/migrations/`, applied on startup. Migrations are forward-only: never
-  edit or delete an applied file — add a new numbered one.
+- **No ORM. Alembic for migrations, raw SQL inside.** Data access is raw
+  `asyncpg`; schema changes are Alembic revisions in `backend/alembic/versions/`
+  with hand-written `op.execute(sa.text(...))` — no model metadata, no
+  `--autogenerate`. Never edit an applied revision — add a new one.
 - **API routing:** the frontend fetches origin-relative `/api/...`. In dev the
   Vite proxy forwards it; in production nginx reverse-proxies `/api/` to the
   backend (stripping the `/api` prefix).
@@ -131,19 +133,22 @@ are omitted).
 │       └── react-patterns
 │           └── SKILL.md
 ├── backend
-│   ├── migrations
-│   │   └── 0001_create_users.sql
+│   ├── alembic
+│   │   ├── env.py
+│   │   ├── script.py.mako
+│   │   └── versions
+│   │       └── 0001_create_users.py
+│   ├── alembic.ini
 │   ├── src
 │   │   └── backend
 │   │       ├── __init__.py
 │   │       ├── app.py
 │   │       ├── config.py
 │   │       ├── database.py
-│   │       ├── migrations.py
 │   │       └── models.py
 │   ├── tests
 │   │   ├── conftest.py
-│   │   └── test_migrations.py
+│   │   └── test_alembic_migrations.py
 │   ├── .dockerignore
 │   ├── .env.example
 │   ├── .gitignore
@@ -198,13 +203,13 @@ are omitted).
 - `src/backend/app.py` — FastAPI app, lifespan (opens the pool, runs
   migrations), and the `/users` routes.
 - `src/backend/database.py` — asyncpg connection pool + connection
-  context manager; invokes the migration runner on startup.
-- `src/backend/migrations.py` — forward-only migration runner (advisory lock,
-  `schema_migrations` ledger, per-migration transactions).
+  context manager; runs `alembic upgrade head` on startup.
+- `src/backend/config.py` — env-based settings (`DATABASE_URL`, pool sizing)
+  plus `to_sync_url()` for the Alembic sync URL.
 - `src/backend/models.py` — pydantic `UserCreate` / `UserResponse`.
-- `src/backend/config.py` — env-based settings (`DATABASE_URL`, pool sizing).
-- `migrations/*.sql` — ordered schema migrations.
-- `tests/` — pytest + pytest-asyncio suite for the migration runner (needs a
+- `alembic/versions/*.py` — ordered schema revisions (raw SQL, no ORM).
+- `alembic/env.py` — DB URL from the environment; no model metadata.
+- `tests/` — pytest + pytest-asyncio suite for Alembic migrations (needs a
   running Postgres).
 
 ### Frontend (`frontend/`)

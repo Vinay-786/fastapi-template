@@ -262,7 +262,7 @@ from datetime import datetime
 
 @dataclass
 class Migration:
-    """Internal value object (cf. migrations.py)."""
+    """Internal value object (example shape)."""
     version: str
     path: str
 
@@ -351,17 +351,18 @@ async def fetch_all(fetchers: list[Callable]) -> list[object]:
 
 ```
 backend/
-├── migrations/            # forward-only *.sql
+├── alembic/                 # Alembic revisions (hand-written raw SQL, no ORM)
+│   └── versions/
+├── alembic.ini
 └── src/backend/
     ├── __init__.py        # exports app + main() entrypoint
     ├── app.py
     ├── config.py
     ├── database.py
-    ├── migrations.py
     └── models.py
 tests/
 ├── conftest.py
-└── test_migrations.py
+└── test_alembic_migrations.py
 pyproject.toml
 ```
 

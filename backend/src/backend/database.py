@@ -1,19 +1,21 @@
 """Database layer: asyncpg connection pool, lifespan management, and migrations.
 
-No ORM and no migration framework are used — the pool is created directly with
-asyncpg and the schema is brought up to date by the forward-only migration
-runner in :mod:`backend.migrations` at startup.
+No ORM is used — the pool is created directly with asyncpg and all queries
+are raw SQL. Schema migrations are applied with Alembic (synchronous
+SQLAlchemy + psycopg engine, hand-written ``op.execute()`` revisions, no
+model metadata) at startup via ``alembic upgrade head``.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import asyncpg
 
 from .config import get_settings
-from .migrations import run_migrations
 
 
 class Database:
@@ -45,13 +47,31 @@ class Database:
             self._pool = None
 
     async def _migrate(self) -> None:
-        """Apply pending forward-only migrations on a single connection.
+        """Apply pending Alembic migrations (``upgrade head``).
 
-        A dedicated connection is used so the advisory lock is held for the
-        duration of the migration run and released deterministically.
+        Alembic is synchronous, so the upgrade runs in a worker thread on a
+        short-lived sync engine (psycopg). The ``DATABASE_URL`` env var is
+        shared: it is converted to a ``postgresql+psycopg://`` URL for the
+        migration engine while the app itself keeps using asyncpg.
         """
-        async with self.connection() as conn:
-            await run_migrations(conn)
+        from alembic import command as alembic_command
+        from alembic.config import Config as AlembicConfig
+
+        settings = get_settings()
+        dsn_sync = settings.sync_database_url
+        ini_path = Path(__file__).resolve().parents[2] / "alembic.ini"
+
+        def _upgrade() -> None:
+            cfg = AlembicConfig(str(ini_path))
+            cfg.set_main_option("sqlalchemy.url", dsn_sync)
+            # Resolve relative to the ini file, not the process CWD, so
+            # startup upgrades work regardless of where uvicorn was launched.
+            cfg.set_main_option(
+                "script_location", str(ini_path.parent / "alembic")
+            )
+            alembic_command.upgrade(cfg, "head")
+
+        await asyncio.to_thread(_upgrade)
 
     @asynccontextmanager
     async def connection(self) -> AsyncIterator[asyncpg.Connection]:

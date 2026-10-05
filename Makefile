@@ -55,36 +55,31 @@ status: ## Show Docker container status (state + health + ports)
 	@$(COMPOSE) ps --format 'table {{.Name}}\t{{.Service}}\t{{.State}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null \
 		|| $(COMPOSE) ps
 
-# --- Migrations -----------------------------------------------------------
+# --- Migrations (Alembic, no ORM) -----------------------------------------
+# Schema changes are Alembic revisions with hand-written raw SQL
+# (op.execute). No ORM models, no --autogenerate. The backend also runs
+# `alembic upgrade head` automatically on startup.
 .PHONY: migrate
-migrate: ## Apply pending migrations (starts backend; runs them on startup)
-	$(COMPOSE) up -d --build backend
-	@echo "Backend started; migrations run automatically on startup."
-	@echo "Use 'make migrate-status' to verify."
+migrate: ## Apply pending migrations (needs db-up)
+	cd $(BACKEND_DIR) && uv run alembic upgrade head
 
 .PHONY: migrate-status
-migrate-status: ## Show applied vs pending migrations
-	@echo "=== Applied (schema_migrations) ==="
-	@$(PSQL) -t -A -c "SELECT version || '  (' || applied_at || ')' FROM schema_migrations ORDER BY version;" 2>/dev/null \
-		|| echo "(cannot read schema_migrations — is the db up? try 'make db-up')"
+migrate-status: ## Show current revision and history (needs db-up)
+	@echo "=== Current revision ==="
+	@cd $(BACKEND_DIR) && uv run alembic current 2>/dev/null \
+		|| echo "(cannot connect — is the db up? try 'make db-up')"
 	@echo ""
-	@echo "=== Migration files on disk ==="
-	@ls -1 $(BACKEND_DIR)/migrations/*.sql 2>/dev/null | xargs -n1 basename || echo "(none)"
-	@echo ""
-	@echo "=== Pending (on disk but not applied) ==="
-	@applied="$$($(PSQL) -t -A -c 'SELECT version FROM schema_migrations;' 2>/dev/null)"; \
-	ondisk="$$(ls -1 $(BACKEND_DIR)/migrations/*.sql 2>/dev/null | xargs -n1 basename | sed 's/\.sql$$//')"; \
-	pending="$$(echo "$$ondisk" | grep -vxF "$$applied" 2>/dev/null)"; \
-	if [ -n "$$pending" ]; then echo "$$pending" | sed 's/^/  /'; else echo "  (none — up to date)"; fi
+	@echo "=== History ==="
+	@cd $(BACKEND_DIR) && uv run alembic history
 
 .PHONY: new-migration
-new-migration: ## Scaffold a new migration file: make new-migration name=add_user_status
+new-migration: ## Scaffold a new revision: make new-migration name=add_user_status
 	@test -n "$(name)" || { echo "Usage: make new-migration name=<description>"; exit 1; }
-	@last=$$(ls -1 $(BACKEND_DIR)/migrations/*.sql 2>/dev/null | xargs -n1 basename | grep -oE '^[0-9]+' | sort -n | tail -1); \
-	next=$$(printf "%04d" $$(( 10#$${last:-0} + 1 ))); \
-	file="$(BACKEND_DIR)/migrations/$${next}_$(name).sql"; \
-	printf -- "-- %s\n-- Forward-only migration. Do not edit once applied.\n\n" "$${next}_$(name).sql" > "$$file"; \
-	echo "Created $$file"
+	cd $(BACKEND_DIR) && uv run alembic revision -m "$(name)"
+
+.PHONY: migrate-downgrade
+migrate-downgrade: ## Revert the last applied migration (dev only, needs db-up)
+	cd $(BACKEND_DIR) && uv run alembic downgrade -1
 
 # --- Backend --------------------------------------------------------------
 .PHONY: backend-install

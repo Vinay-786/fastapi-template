@@ -337,8 +337,9 @@ row = await conn.fetchrow(f"SELECT * FROM users WHERE id = '{user_id}'")
 ```
 
 - Always use `$1, $2, ...` placeholders; never interpolate user input into SQL.
-- Schema changes are forward-only SQL files in `backend/migrations/` — never
-  edit an applied migration; add a new numbered one.
+- Schema changes are Alembic revisions with hand-written raw SQL in
+  `backend/alembic/versions/` (no `--autogenerate`) — never edit an applied
+  revision; add a new one.
 
 ## File Organization
 
@@ -346,13 +347,14 @@ row = await conn.fetchrow(f"SELECT * FROM users WHERE id = '{user_id}'")
 
 ```
 backend/
-├── migrations/            # ordered forward-only *.sql migrations
+├── alembic/                 # Alembic revisions (hand-written raw SQL, no ORM)
+│   └── versions/
+├── alembic.ini
 └── src/backend/
     ├── app.py             # FastAPI app + routes
-    ├── database.py        # asyncpg pool + lifespan
-    ├── migrations.py      # migration runner
-    ├── models.py          # Pydantic models
-    └── config.py          # env-based settings
+    ├── database.py        # asyncpg pool + lifespan (runs `upgrade head`)
+    ├── config.py          # env-based settings (+ to_sync_url for Alembic)
+    └── models.py          # Pydantic models
 
 frontend/
 └── src/
@@ -439,15 +441,14 @@ export function Dashboard() {
 ### Test Structure (AAA Pattern)
 
 ```python
-async def test_fresh_database_applies_0001(conn, migrations_dir):
-    # Arrange
-    _write(migrations_dir, "0001_create_users.sql", "CREATE TABLE users (...);")
+async def test_upgrade_head_creates_users(conn, alembic_cfg):
+    # Arrange: fresh DB (conftest drops alembic_version + users)
 
     # Act
-    applied = await run_migrations(conn, migrations_dir)
+    alembic_command.upgrade(alembic_cfg, "head")
 
     # Assert
-    assert applied == ["0001_create_users"]
+    assert await _table_exists(conn, "users")
 ```
 
 ### Test Naming
