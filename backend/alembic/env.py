@@ -17,8 +17,9 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Make the src-layout backend package importable when Alembic runs with
 # backend/ as the working directory.
