@@ -99,6 +99,8 @@ make migrate-status
 | `make backend-install` | Install backend deps (`uv sync`)             |
 | `make backend-dev`     | Run FastAPI with reload (needs `make db-up`) |
 | `make backend-test`    | Run pytest (needs Postgres running)          |
+| `make backend-test-unit` | Run mocked unit tests (no DB needed)       |
+| `make backend-lint`    | Lint backend (`ruff check` + format check)   |
 | `make backend-shell`   | Python REPL with the backend importable      |
 
 ### Frontend

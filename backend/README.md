@@ -146,12 +146,29 @@ When `DEBUG=false` the interactive docs endpoints (`/docs`, `/redoc`,
 
 ## Tests
 
-The migration suite covers Alembic behavior against a live database: fresh
-`upgrade head`, idempotent re-upgrade, downgrade/re-upgrade round-trip, the
-`to_sync_url()` DSN conversion, and the app-startup path (`Database._migrate`).
-They require a running Postgres (from the repo root: `docker compose
-up -d db`).
+Two tiers, split by the `db` pytest marker (see `pyproject.toml`):
+
+- **Unit (mocked, no DB)** — `tests/test_api_unit.py` (endpoint tests with a
+  monkeypatched `db.connection` yielding fake connections) and
+  `tests/test_config_unit.py` (config/URL/model tests), plus the pure
+  `to_sync_url` / single-head checks in `test_alembic_migrations.py`. These
+  are what the `prod` CI workflow runs:
+
+  ```bash
+  uv run pytest -m "not db"   # or: make backend-test-unit
+  ```
+
+- **Integration (needs Postgres)** — Alembic upgrade/downgrade and startup
+  migration tests marked `@pytest.mark.db` (from the repo root:
+  `docker compose up -d db`):
+
+  ```bash
+  uv run pytest   # or: make backend-test (needs make db-up first)
+  ```
+
+## Lint
 
 ```bash
-uv run pytest
+uv run ruff check .                          # or: make backend-lint
+uv run ruff format --check src tests alembic
 ```

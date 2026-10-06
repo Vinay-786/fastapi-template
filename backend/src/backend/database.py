@@ -54,8 +54,9 @@ class Database:
         shared: it is converted to a ``postgresql+psycopg://`` URL for the
         migration engine while the app itself keeps using asyncpg.
         """
-        from alembic import command as alembic_command
         from alembic.config import Config as AlembicConfig
+
+        from alembic import command as alembic_command
 
         settings = get_settings()
         dsn_sync = settings.sync_database_url
@@ -66,9 +67,7 @@ class Database:
             cfg.set_main_option("sqlalchemy.url", dsn_sync)
             # Resolve relative to the ini file, not the process CWD, so
             # startup upgrades work regardless of where uvicorn was launched.
-            cfg.set_main_option(
-                "script_location", str(ini_path.parent / "alembic")
-            )
+            cfg.set_main_option("script_location", str(ini_path.parent / "alembic"))
             alembic_command.upgrade(cfg, "head")
 
         await asyncio.to_thread(_upgrade)

@@ -94,6 +94,14 @@ backend-dev: ## Run the backend dev server with reload (needs db-up)
 backend-test: ## Run backend tests (needs Postgres running)
 	cd $(BACKEND_DIR) && uv run pytest
 
+.PHONY: backend-test-unit
+backend-test-unit: ## Run backend unit tests only (mocked, no DB needed)
+	cd $(BACKEND_DIR) && uv run pytest -m "not db" -v
+
+.PHONY: backend-lint
+backend-lint: ## Lint backend (ruff check + format check)
+	cd $(BACKEND_DIR) && uv run ruff check . && uv run ruff format --check src tests alembic
+
 .PHONY: backend-shell
 backend-shell: ## Open a Python REPL with the backend package importable
 	cd $(BACKEND_DIR) && uv run python

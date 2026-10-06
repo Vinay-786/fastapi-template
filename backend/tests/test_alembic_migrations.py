@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from alembic import command as alembic_command
 from alembic.script import ScriptDirectory
 
+from alembic import command as alembic_command
 from backend.config import to_sync_url
 
 
@@ -43,6 +43,7 @@ def test_single_head_exists(alembic_cfg):
     assert _current_revisions(alembic_cfg) == ["0001"]
 
 
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_upgrade_head_creates_users(conn, alembic_cfg):
     alembic_command.upgrade(alembic_cfg, "head")
@@ -60,6 +61,7 @@ async def test_upgrade_head_creates_users(conn, alembic_cfg):
     assert row["email"] == "a@example.com"
 
 
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_upgrade_is_idempotent(conn, alembic_cfg):
     alembic_command.upgrade(alembic_cfg, "head")
@@ -69,6 +71,7 @@ async def test_upgrade_is_idempotent(conn, alembic_cfg):
     assert await _table_exists(conn, "users")
 
 
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_downgrade_and_reupgrade(conn, alembic_cfg):
     alembic_command.upgrade(alembic_cfg, "head")
@@ -82,6 +85,7 @@ async def test_downgrade_and_reupgrade(conn, alembic_cfg):
     assert await _table_exists(conn, "users")
 
 
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_startup_migrate_applies_schema(conn, alembic_cfg):
     """Database._migrate() (app startup path) brings a fresh DB to head."""
