@@ -1,0 +1,58 @@
+# pre-commit config — local quality gate, mirrors CI (.github/workflows/prod.yml).
+#
+# Install once per clone (wires .git/hooks/pre-commit to the backend venv):
+#   make pre-commit-install   # == uv run --project backend pre-commit install
+#
+# Run without committing:
+#   make pre-commit-run       # == pre-commit run --all-files
+#
+# How the gate works: every `git commit` runs the `local` hooks below. Any
+# hook exiting non-zero blocks the commit. `always_run: true` means the
+# checks run on EVERY commit (not only when matching files change), so a
+# commit can never slip through with failing tests.
+#
+# Scope note: the backend hook runs the mocked unit suite (`-m "not db"`),
+# which needs no database. Live-Postgres tests (marked `db`) are excluded
+# here because they require `make db-up`; they run via `make backend-test`
+# and must pass before pushing. Bypass only in emergencies:
+#   git commit --no-verify   # skips hooks; CI still enforces on push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: local
+    hooks:
+      - id: backend-lint
+        name: backend lint (ruff check + format check)
+        entry: make backend-lint
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: backend-unit-tests
+        name: backend unit tests (pytest -m "not db", no DB needed)
+        entry: make backend-test-unit
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: frontend-lint
+        name: frontend lint (oxlint)
+        entry: make frontend-lint
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: frontend-build
+        name: frontend type-check + build (tsc + vite)
+        entry: make frontend-build
+        language: system
+        pass_filenames: false
+        always_run: true

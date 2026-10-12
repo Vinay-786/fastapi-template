@@ -99,6 +99,25 @@ are spec-compliant and portable as-is.
 
 ## Running
 
+### First-time setup
+
+On a fresh clone, set up the backend environment before any other work —
+commits are blocked by the pre-commit gate until this is done:
+
+```bash
+cd backend && uv sync            # creates .venv, installs deps + dev deps (incl. pre-commit)
+source .venv/bin/activate        # activate the venv for direct python/pytest/ruff use
+cd .. && make pre-commit-install # install the git hooks (blocks commits unless checks pass)
+```
+
+- `uv sync` installs the `dev` dependency group by default (pytest, ruff,
+  pre-commit). Never use `--no-dev` on a dev machine — the test, lint, and
+  hook tooling lives there.
+- Activating the venv (or prefixing commands with `uv run`) is required
+  before invoking `python`, `pytest`, `ruff`, or `pre-commit` directly. The
+  root `Makefile` targets already go through `uv run`, so they work without
+  activation.
+
 ```bash
 # Full stack (frontend on http://localhost:8080)
 docker compose up --build

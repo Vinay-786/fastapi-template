@@ -112,6 +112,38 @@ make migrate-status
 | `make frontend-build`   | Type-check and build               |
 | `make frontend-lint`    | Lint with oxlint                   |
 
+### Pre-commit
+
+A pre-commit gate blocks every `git commit` unless all checks pass (backend
+lint, backend unit tests, frontend lint, frontend type-check + build — the
+same suite CI enforces). Install the tool once, then hook this repo:
+
+```bash
+cd backend && uv sync            # creates .venv, installs deps + dev deps (incl. pre-commit)
+source .venv/bin/activate        # activate the venv for direct tool use
+cd .. && make pre-commit-install # install the git hooks (uses the venv's pre-commit)
+```
+
+| Command                  | Description                                |
+| ------------------------ | ------------------------------------------ |
+| `make pre-commit-install` | Install the git pre-commit hook (venv's pre-commit) |
+| `make pre-commit-run`    | Run all pre-commit hooks without committing |
+
+Notes:
+
+- `pre-commit` is a backend **dev** dependency (`backend/pyproject.toml`),
+  so `cd backend && uv sync` installs it — no separate install step. Never
+  use `uv sync --no-dev` on a dev machine; the test/lint/hook tooling lives
+  in the dev group.
+
+Notes:
+
+- The backend hook runs the mocked unit suite (`pytest -m "not db"`, no
+  database needed). Live-Postgres tests (marked `db`) need `make db-up`, so
+  they run via `make backend-test` before pushing rather than in the hook.
+- Only bypass in emergencies with `git commit --no-verify`; CI still
+  enforces on push.
+
 ### Database inspection
 
 | Command          | Description                              |

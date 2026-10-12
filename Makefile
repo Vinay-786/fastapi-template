@@ -123,6 +123,15 @@ frontend-build: ## Type-check and build the frontend
 frontend-lint: ## Lint the frontend (oxlint)
 	cd $(FRONTEND_DIR) && npm run lint
 
+# --- Pre-commit (local quality gate) --------------------------------------
+.PHONY: pre-commit-install
+pre-commit-install: ## Install git pre-commit hooks (blocks commits unless checks pass)
+	uv run --project $(BACKEND_DIR) pre-commit install
+
+.PHONY: pre-commit-run
+pre-commit-run: ## Run all pre-commit hooks without committing
+	uv run --project $(BACKEND_DIR) pre-commit run --all-files
+
 # --- Database inspection --------------------------------------------------
 .PHONY: db-shell
 db-shell: ## Open an interactive psql shell in the db container
